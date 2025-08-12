@@ -9,14 +9,37 @@ _dcp_completion() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    # DCP cache file location
+        # DCP cache file locations
     local cache_file="${HOME}/.cache/dcp/hosts"
+    local alias_file="${HOME}/.cache/dcp/aliases"
 
     # Available options
-    opts="--help --list-hosts --add-host --remove-host --clear-cache -r -p -P -q -v -C -4 -6"
+    opts="--help --list-hosts --add-host --remove-host --clear-cache --add-alias --remove-alias --list-aliases -r -p -P -q -v -C -4 -6"
 
-    # Special case: if previous word is --add-host or --remove-host
-    if [[ "$prev" == "--add-host" || "$prev" == "--remove-host" ]]; then
+    # Special case: handle different command arguments
+    case "$prev" in
+        --add-host|--remove-host)
+            if [[ -f "$cache_file" ]]; then
+                COMPREPLY=($(compgen -W "$(cat "$cache_file" 2>/dev/null)" -- "$cur"))
+            fi
+            return 0
+            ;;
+        --add-alias)
+            # For --add-alias, don't complete the alias name (first arg)
+            return 0
+            ;;
+        --remove-alias)
+            if [[ -f "$alias_file" ]]; then
+                local aliases
+                aliases=$(cut -d'=' -f1 "$alias_file" 2>/dev/null)
+                COMPREPLY=($(compgen -W "$aliases" -- "$cur"))
+            fi
+            return 0
+            ;;
+    esac
+
+    # Check if we're completing the host for --add-alias (third argument)
+    if [[ "${COMP_WORDS[COMP_CWORD-2]}" == "--add-alias" ]]; then
         if [[ -f "$cache_file" ]]; then
             COMPREPLY=($(compgen -W "$(cat "$cache_file" 2>/dev/null)" -- "$cur"))
         fi
@@ -29,8 +52,39 @@ _dcp_completion() {
         return 0
     fi
 
-    # Check if we're completing a remote path (contains @)
-    if [[ "$cur" == *@* ]]; then
+    # Check if we're completing an alias (starts with @)
+    if [[ "$cur" == @* ]]; then
+        local alias_prefix="${cur#@}"
+
+        # If there's a colon, we're completing a path on the alias host
+        if [[ "$alias_prefix" == *:* ]]; then
+            COMPREPLY=("$cur")
+            return 0
+        fi
+
+        # Complete with aliases
+        if [[ -f "$alias_file" ]]; then
+            local aliases matching_aliases=""
+            aliases=$(cut -d'=' -f1 "$alias_file" 2>/dev/null)
+
+            for alias_name in $aliases; do
+                if [[ "$alias_name" == "$alias_prefix"* ]]; then
+                    matching_aliases="$matching_aliases @$alias_name:"
+                fi
+            done
+
+            if [[ -n "$matching_aliases" ]]; then
+                COMPREPLY=($(compgen -W "$matching_aliases" -- "$cur"))
+                compopt -o nospace
+                return 0
+            fi
+        fi
+
+        return 0
+    fi
+
+    # Check if we're completing a remote path (contains @ but not starting with @)
+    if [[ "$cur" == *@* && "$cur" != @* ]]; then
         # Extract the part before @ for user completion
         local user_part="${cur%%@*}"
         local host_part="${cur#*@}"
@@ -60,6 +114,7 @@ _dcp_completion() {
 
             if [[ -n "$matching_hosts" ]]; then
                 COMPREPLY=($(compgen -W "$matching_hosts" -- "$cur"))
+                compopt -o nospace
             else
                 # If no exact user match, try to complete with any cached host
                 # but replace the user part
@@ -68,30 +123,45 @@ _dcp_completion() {
                     matching_hosts="$matching_hosts $user_part@$hostname:"
                 done
                 COMPREPLY=($(compgen -W "$matching_hosts" -- "$cur"))
+                compopt -o nospace
             fi
         fi
 
         return 0
     fi
 
-    # Check if current word looks like it could be the start of a user@host pattern
+    # Check if current word looks like it could be the start of a user@host pattern or alias
     if [[ "$cur" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
+        local all_completions=""
+
+        # Add cached hosts that match
         if [[ -f "$cache_file" ]]; then
             local hosts
             hosts=$(cat "$cache_file" 2>/dev/null)
 
-            # Find hosts that start with the current user prefix
-            local matching_completions=""
             for host in $hosts; do
                 if [[ "$host" == "$cur"* ]]; then
-                    matching_completions="$matching_completions $host:"
+                    all_completions="$all_completions $host:"
                 fi
             done
+        fi
 
-            if [[ -n "$matching_completions" ]]; then
-                COMPREPLY=($(compgen -W "$matching_completions" -- "$cur"))
-                return 0
-            fi
+        # Add aliases that match (with @ prefix)
+        if [[ -f "$alias_file" ]]; then
+            local aliases
+            aliases=$(cut -d'=' -f1 "$alias_file" 2>/dev/null)
+
+            for alias_name in $aliases; do
+                if [[ "$alias_name" == "$cur"* ]]; then
+                    all_completions="$all_completions @$alias_name:"
+                fi
+            done
+        fi
+
+        if [[ -n "$all_completions" ]]; then
+            COMPREPLY=($(compgen -W "$all_completions" -- "$cur"))
+            compopt -o nospace
+            return 0
         fi
     fi
 

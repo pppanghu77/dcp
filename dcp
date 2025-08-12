@@ -8,6 +8,7 @@
 DCP_CACHE_DIR="${HOME}/.cache/dcp"
 DCP_CACHE_FILE="${DCP_CACHE_DIR}/hosts"
 DCP_CONFIG_FILE="${DCP_CACHE_DIR}/config"
+DCP_ALIAS_FILE="${DCP_CACHE_DIR}/aliases"
 
 # Colors for output
 RED='\033[0;31m'
@@ -22,8 +23,12 @@ init_cache() {
         mkdir -p "$DCP_CACHE_DIR"
     fi
 
-    if [[ ! -f "$DCP_CACHE_FILE" ]]; then
+        if [[ ! -f "$DCP_CACHE_FILE" ]]; then
         touch "$DCP_CACHE_FILE"
+    fi
+
+    if [[ ! -f "$DCP_ALIAS_FILE" ]]; then
+        touch "$DCP_ALIAS_FILE"
     fi
 
     if [[ ! -f "$DCP_CONFIG_FILE" ]]; then
@@ -50,16 +55,22 @@ usage() {
     echo "  dcp --add-host user@host         # Add host to cache"
     echo "  dcp --remove-host user@host      # Remove host from cache"
     echo "  dcp --clear-cache                # Clear all cached hosts"
+    echo "  dcp --add-alias name user@host   # Add host alias"
+    echo "  dcp --remove-alias name          # Remove host alias"
+    echo "  dcp --list-aliases               # List all aliases"
     echo "  dcp --help                       # Show this help"
     echo
     echo "Examples:"
     echo "  dcp file.txt uos@10.8.12.86:/tmp/"
     echo "  dcp uos@10.8.12.86:/etc/hosts ."
     echo "  dcp -r /local/dir/ user@server:/remote/dir/"
+    echo "  dcp --add-alias prod uos@10.8.12.86  # Add alias"
+    echo "  dcp file.txt @prod:/tmp/              # Use alias"
     echo
     echo "Features:"
     echo "  - Auto-completion with TAB key"
     echo "  - Automatic caching of used hosts"
+    echo "  - Host aliases support (@alias format)"
     echo "  - Support for all scp options"
     echo
 }
@@ -111,6 +122,94 @@ clear_cache() {
     fi
 }
 
+# Add alias
+add_alias() {
+    local alias_name="$1"
+    local host="$2"
+
+    if [[ -z "$alias_name" || -z "$host" ]]; then
+        echo -e "${RED}Error: Please specify both alias name and host${NC}"
+        echo "Usage: dcp --add-alias name user@hostname"
+        return 1
+    fi
+
+    if [[ ! "$host" =~ ^[^@]+@[^:]+$ ]]; then
+        echo -e "${RED}Error: Host must be in format user@hostname${NC}"
+        return 1
+    fi
+
+    # Remove existing alias if it exists
+    if [[ -f "$DCP_ALIAS_FILE" ]]; then
+        grep -v "^$alias_name=" "$DCP_ALIAS_FILE" > "${DCP_ALIAS_FILE}.tmp" 2>/dev/null || true
+        mv "${DCP_ALIAS_FILE}.tmp" "$DCP_ALIAS_FILE"
+    fi
+
+    # Add new alias
+    echo "$alias_name=$host" >> "$DCP_ALIAS_FILE"
+    echo -e "${GREEN}Added alias: ${NC}@$alias_name → $host"
+}
+
+# Remove alias
+remove_alias() {
+    local alias_name="$1"
+
+    if [[ -z "$alias_name" ]]; then
+        echo -e "${RED}Error: Please specify alias name to remove${NC}"
+        return 1
+    fi
+
+    if [[ -f "$DCP_ALIAS_FILE" ]]; then
+        if grep -q "^$alias_name=" "$DCP_ALIAS_FILE"; then
+            grep -v "^$alias_name=" "$DCP_ALIAS_FILE" > "${DCP_ALIAS_FILE}.tmp" 2>/dev/null || true
+            mv "${DCP_ALIAS_FILE}.tmp" "$DCP_ALIAS_FILE"
+            echo -e "${GREEN}Removed alias: ${NC}@$alias_name"
+        else
+            echo -e "${YELLOW}Alias not found: ${NC}@$alias_name"
+        fi
+    else
+        echo -e "${YELLOW}No aliases file found${NC}"
+    fi
+}
+
+# List aliases
+list_aliases() {
+    echo -e "${BLUE}Host aliases:${NC}"
+    if [[ -f "$DCP_ALIAS_FILE" && -s "$DCP_ALIAS_FILE" ]]; then
+        while IFS='=' read -r alias_name host; do
+            echo "  @$alias_name → $host"
+        done < "$DCP_ALIAS_FILE"
+    else
+        echo "No aliases defined yet."
+    fi
+}
+
+# Resolve alias to host
+resolve_alias() {
+    local input="$1"
+
+    # Check if input starts with @
+    if [[ "$input" == @* ]]; then
+        local alias_name="${input#@}"
+        # Extract alias name before colon if present
+        alias_name="${alias_name%%:*}"
+
+        if [[ -f "$DCP_ALIAS_FILE" ]]; then
+            local host
+            host=$(grep "^$alias_name=" "$DCP_ALIAS_FILE" 2>/dev/null | cut -d'=' -f2)
+            if [[ -n "$host" ]]; then
+                # Replace @alias with actual host, preserving the rest
+                echo "${input/@$alias_name/$host}"
+                return 0
+            fi
+        fi
+        echo -e "${RED}Error: Alias not found: @$alias_name${NC}" >&2
+        return 1
+    fi
+
+    # Return input unchanged if not an alias
+    echo "$input"
+}
+
 # Main function
 main() {
     init_cache
@@ -148,23 +247,54 @@ main() {
             clear_cache
             exit 0
             ;;
+        --add-alias)
+            if [[ -n "$2" && -n "$3" ]]; then
+                add_alias "$2" "$3"
+            else
+                echo -e "${RED}Error: Please specify both alias name and host${NC}"
+                echo "Usage: dcp --add-alias name user@hostname"
+                exit 1
+            fi
+            exit 0
+            ;;
+        --remove-alias)
+            if [[ -n "$2" ]]; then
+                remove_alias "$2"
+            else
+                echo -e "${RED}Error: Please specify alias name to remove${NC}"
+                exit 1
+            fi
+            exit 0
+            ;;
+        --list-aliases)
+            list_aliases
+            exit 0
+            ;;
         "")
             usage
             exit 0
             ;;
     esac
 
-    # Parse arguments to find hosts and cache them
+        # Resolve aliases and build new argument array
+    resolved_args=()
     for arg in "$@"; do
-        host=$(extract_host "$arg")
+        resolved_arg=$(resolve_alias "$arg")
+        if [[ $? -ne 0 ]]; then
+            exit 1  # Exit if alias resolution failed
+        fi
+        resolved_args+=("$resolved_arg")
+
+        # Cache resolved hosts
+        host=$(extract_host "$resolved_arg")
         if [[ -n "$host" ]]; then
             add_host_to_cache "$host"
         fi
     done
 
-    # Execute scp with all arguments
-    echo -e "${YELLOW}Executing: ${NC}scp $*"
-    exec scp "$@"
+    # Execute scp with resolved arguments
+    echo -e "${YELLOW}Executing: ${NC}scp ${resolved_args[*]}"
+    exec scp "${resolved_args[@]}"
 }
 
 # Run main function with all arguments

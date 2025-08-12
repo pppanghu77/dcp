@@ -41,41 +41,55 @@ echo "$ ./dcp --list-hosts"
 ./dcp --list-hosts
 echo
 
-# 4. 演示自动补全提示
-echo -e "${CYAN}4. 自动补全功能:${NC}"
+# 4. 添加和使用别名
+echo -e "${CYAN}4. 别名功能:${NC}"
+echo "$ ./dcp --add-alias prod uos@10.8.12.86"
+./dcp --add-alias prod uos@10.8.12.86
+echo
+
+echo "$ ./dcp --add-alias dev root@192.168.1.100"
+./dcp --add-alias dev root@192.168.1.100
+echo
+
+echo "$ ./dcp --list-aliases"
+./dcp --list-aliases
+echo
+
+# 5. 演示自动补全提示
+echo -e "${CYAN}5. 自动补全功能:${NC}"
 echo -e "${YELLOW}当你输入以下内容并按 TAB 键时:${NC}"
 echo
-echo -e "  ${GREEN}dcp u<TAB>${NC}     → 会补全为: ${GREEN}uos@10.8.12.86:${NC}"
+echo -e "  ${GREEN}dcp u<TAB>${NC}     → 会补全为: ${GREEN}uos@10.8.12.86:${NC} 或 ${GREEN}@prod:${NC}"
+echo -e "  ${GREEN}dcp @p<TAB>${NC}    → 会补全为: ${GREEN}@prod:${NC}"
+echo -e "  ${GREEN}dcp @d<TAB>${NC}    → 会补全为: ${GREEN}@dev:${NC}"
 echo -e "  ${GREEN}dcp r<TAB>${NC}     → 会补全为: ${GREEN}root@192.168.1.100:${NC}"
-echo -e "  ${GREEN}dcp a<TAB>${NC}     → 会补全为: ${GREEN}admin@server.local:${NC}"
 echo
 
-# 5. 演示缓存管理
-echo -e "${CYAN}5. 缓存管理:${NC}"
-echo "$ ./dcp --remove-host admin@server.local"
-./dcp --remove-host admin@server.local
-echo
-
-echo "查看更新后的缓存:"
-echo "$ ./dcp --list-hosts"
-./dcp --list-hosts
-echo
-
-# 6. 演示实际使用场景
-echo -e "${CYAN}6. 实际使用场景:${NC}"
+# 6. 别名使用演示
+echo -e "${CYAN}6. 使用别名复制文件:${NC}"
 echo -e "${YELLOW}创建一个测试文件...${NC}"
 echo "Hello from DCP!" > /tmp/test-dcp.txt
 echo "$ echo 'Hello from DCP!' > /tmp/test-dcp.txt"
 echo
 
-echo -e "${YELLOW}使用 dcp 复制文件 (模拟, 不会真正执行 scp):${NC}"
-echo "$ ./dcp /tmp/test-dcp.txt uos@10.8.12.86:/tmp/"
-echo -e "${GREEN}执行结果:${NC} scp /tmp/test-dcp.txt uos@10.8.12.86:/tmp/"
-echo -e "${GREEN}主机自动添加到缓存!${NC}"
+echo -e "${YELLOW}使用别名复制文件:${NC}"
+echo "$ ./dcp /tmp/test-dcp.txt @prod:/tmp/"
+echo -e "${GREEN}别名 @prod 会自动解析为 uos@10.8.12.86${NC}"
 echo
 
-# 7. 安装说明
-echo -e "${CYAN}7. 安装到系统:${NC}"
+# 7. 演示缓存管理
+echo -e "${CYAN}7. 缓存和别名管理:${NC}"
+echo "$ ./dcp --remove-alias dev"
+./dcp --remove-alias dev
+echo
+
+echo "查看更新后的别名:"
+echo "$ ./dcp --list-aliases"
+./dcp --list-aliases
+echo
+
+# 8. 安装说明
+echo -e "${CYAN}8. 安装到系统:${NC}"
 echo -e "${YELLOW}用户级安装:${NC}"
 echo "$ ./install.sh"
 echo
@@ -89,8 +103,8 @@ echo "$ source ~/.bashrc    # 对于 bash"
 echo "$ source ~/.zshrc     # 对于 zsh"
 echo
 
-# 8. 高级功能
-echo -e "${CYAN}8. 高级功能:${NC}"
+# 9. 高级功能
+echo -e "${CYAN}9. 高级功能:${NC}"
 echo -e "${YELLOW}递归复制目录:${NC}"
 echo "$ dcp -r /local/dir/ user@server:/remote/dir/"
 echo
@@ -104,7 +118,7 @@ echo "$ dcp -v file.txt user@server:/path/"
 echo
 
 # 9. 配置示例
-echo -e "${CYAN}9. 配置文件:${NC}"
+echo -e "${CYAN}10. 配置文件:${NC}"
 echo "配置文件位置: ~/.cache/dcp/config"
 echo "示例配置文件: dcp.conf.example"
 echo

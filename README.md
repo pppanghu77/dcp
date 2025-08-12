@@ -6,6 +6,7 @@ DCP (Dynamic Copy Protocol) 是一个智能的 SCP 命令封装工具，提供�
 
 - **智能自动补全**: 使用 TAB 键自动补全主机地址和路径
 - **主机缓存**: 自动记录使用过的主机，支持快速补全
+- **别名支持**: 为常用主机设置别名，使用 @alias 格式
 - **多架构支持**: 纯 shell 实现，支持所有主流架构和系统
 - **兼容性**: 完全兼容 scp 的所有参数和选项
 - **多 shell 支持**: 支持 bash 和 zsh 自动补全
@@ -74,6 +75,24 @@ $ dcp /home/<TAB>
 /home/user1/  /home/user2/  /home/ljc/
 ```
 
+### 别名管理
+
+```bash
+# 添加主机别名
+dcp --add-alias prod uos@10.8.12.86
+dcp --add-alias dev root@192.168.1.100
+
+# 查看所有别名
+dcp --list-aliases
+
+# 使用别名
+dcp file.txt @prod:/tmp/
+dcp @dev:/etc/hosts .
+
+# 删除别名
+dcp --remove-alias old-server
+```
+
 ### 缓存管理
 
 ```bash
@@ -95,6 +114,7 @@ dcp --clear-cache
 DCP 会在 `~/.cache/dcp/` 目录下创建以下文件：
 
 - `hosts`: 缓存的主机列表
+- `aliases`: 别名定义文件
 - `config`: 配置文件
 
 ### 配置文件示例
@@ -139,11 +159,19 @@ dcp/
 # 补全逻辑流程
 输入: "u" + TAB
     ↓
-检查缓存中是否有以 "u" 开头的条目
+检查缓存和别名中是否有以 "u" 开头的条目
     ↓
-找到: "uos@10.8.12.86"
+找到: "uos@10.8.12.86" 和别名 "@ubuntu"
     ↓
-补全为: "uos@10.8.12.86:"
+补全选项: "uos@10.8.12.86:" 和 "@ubuntu:"
+
+输入: "@p" + TAB
+    ↓
+检查别名中以 "p" 开头的条目
+    ↓
+找到: 别名 "prod"
+    ↓
+补全为: "@prod:"
 ```
 
 ## 🚀 高级功能
@@ -158,26 +186,37 @@ export DCP_DEFAULT_USER=admin
 export DCP_DEFAULT_OPTIONS="-C -q"
 ```
 
-### 2. 别名设置
+### 2. Shell 别名设置
 
 ```bash
-# 在 ~/.bashrc 中添加常用别名
+# 在 ~/.bashrc 中添加常用的命令别名
 alias dcpr='dcp -r'          # 递归复制
 alias dcpv='dcp -v'          # 详细模式
 alias dcpq='dcp -q'          # 安静模式
+
+# 常用主机别名（使用 dcp 内置别名功能）
+dcp --add-alias backup admin@backup.company.com
+dcp --add-alias web nginx@web.server.com
+dcp --add-alias db mysql@database.server.com
 ```
 
 ### 3. 批量操作示例
 
 ```bash
-# 批量上传文件
+# 批量上传文件（使用别名）
 for file in *.txt; do
-    dcp "$file" server:/backup/
+    dcp "$file" @backup:/backup/
 done
 
 # 从多个服务器下载
-for server in server1 server2 server3; do
-    dcp "user@$server:/log/app.log" "./log-$server.log"
+for alias in prod dev test; do
+    dcp "@$alias:/log/app.log" "./log-$alias.log"
+done
+
+# 批量同步配置文件
+configs=("nginx.conf" "php.ini" "mysql.cnf")
+for config in "${configs[@]}"; do
+    dcp "/etc/$config" @web:/etc/backup/
 done
 ```
 

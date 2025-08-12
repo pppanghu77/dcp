@@ -5,6 +5,7 @@
 _dcp() {
     local state line context
     local cache_file="${HOME}/.cache/dcp/hosts"
+    local alias_file="${HOME}/.cache/dcp/aliases"
 
     _arguments -C \
         '(--help -h)'{--help,-h}'[Show help information]' \
@@ -12,6 +13,9 @@ _dcp() {
         '--add-host[Add host to cache]:host:_dcp_hosts' \
         '--remove-host[Remove host from cache]:host:_dcp_cached_hosts' \
         '--clear-cache[Clear all cached hosts]' \
+        '--add-alias[Add host alias]:alias name: :host:_dcp_hosts' \
+        '--remove-alias[Remove host alias]:alias:_dcp_aliases' \
+        '--list-aliases[List all aliases]' \
         '-r[Recursively copy entire directories]' \
         '-p[Preserve modification times, access times, and modes]' \
         '-P[Use a specific port]:port:' \
@@ -32,6 +36,15 @@ _dcp_cached_hosts() {
     fi
 }
 
+# Function to complete aliases
+_dcp_aliases() {
+    if [[ -f "$alias_file" ]]; then
+        local aliases
+        aliases=(${(f)"$(cut -d'=' -f1 "$alias_file" 2>/dev/null)"})
+        _describe 'aliases' aliases
+    fi
+}
+
 # Function to complete hosts (for adding new ones)
 _dcp_hosts() {
     _alternative \
@@ -42,9 +55,42 @@ _dcp_hosts() {
 # Function to complete files or remote hosts
 _dcp_files_or_hosts() {
     local cache_file="${HOME}/.cache/dcp/hosts"
+    local alias_file="${HOME}/.cache/dcp/aliases"
 
-    # If the current word contains @, we're dealing with a remote host
-    if [[ "$PREFIX" == *@* ]]; then
+    # If the current word starts with @, we're dealing with an alias
+    if [[ "$PREFIX" == @* ]]; then
+        local alias_prefix="${PREFIX#@}"
+
+        # If there's already a colon, complete with remote path
+        if [[ "$alias_prefix" == *:* ]]; then
+            _message "remote path"
+            return 0
+        fi
+
+        # Complete with aliases
+        if [[ -f "$alias_file" ]]; then
+            local aliases completions
+            aliases=(${(f)"$(cut -d'=' -f1 "$alias_file" 2>/dev/null)"})
+            completions=()
+
+            for alias_name in $aliases; do
+                if [[ "$alias_name" == "$alias_prefix"* ]]; then
+                    completions+=("@$alias_name:")
+                fi
+            done
+
+            if [[ ${#completions[@]} -gt 0 ]]; then
+                _describe 'aliases' completions -S ''
+                return 0
+            fi
+        fi
+
+        _message "alias"
+        return 0
+    fi
+
+    # If the current word contains @ but doesn't start with @, we're dealing with user@host
+    if [[ "$PREFIX" == *@* && "$PREFIX" != @* ]]; then
         local user_part="${PREFIX%%@*}"
         local host_part="${PREFIX#*@}"
 
@@ -87,22 +133,38 @@ _dcp_files_or_hosts() {
         return 0
     fi
 
-    # Check if current word could be start of user@host
-    if [[ "$PREFIX" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]] && [[ -f "$cache_file" ]]; then
-        local hosts completions
-        hosts=(${(f)"$(cat "$cache_file" 2>/dev/null)"})
-        completions=()
+    # Check if current word could be start of user@host or alias
+    if [[ "$PREFIX" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
+        local all_completions=()
 
-        for host in $hosts; do
-            if [[ "$host" == "$PREFIX"* ]]; then
-                completions+=("$host:")
-            fi
-        done
+        # Add cached hosts that match
+        if [[ -f "$cache_file" ]]; then
+            local hosts
+            hosts=(${(f)"$(cat "$cache_file" 2>/dev/null)"})
 
-        if [[ ${#completions[@]} -gt 0 ]]; then
+            for host in $hosts; do
+                if [[ "$host" == "$PREFIX"* ]]; then
+                    all_completions+=("$host:")
+                fi
+            done
+        fi
+
+        # Add aliases that match (with @ prefix)
+        if [[ -f "$alias_file" ]]; then
+            local aliases
+            aliases=(${(f)"$(cut -d'=' -f1 "$alias_file" 2>/dev/null)"})
+
+            for alias_name in $aliases; do
+                if [[ "$alias_name" == "$PREFIX"* ]]; then
+                    all_completions+=("@$alias_name:")
+                fi
+            done
+        fi
+
+        if [[ ${#all_completions[@]} -gt 0 ]]; then
             _alternative \
                 'files:local files:_files' \
-                'hosts:remote hosts:((${completions[@]}))'
+                'hosts-and-aliases:hosts and aliases:((${all_completions[@]}))'
             return 0
         fi
     fi
