@@ -61,10 +61,10 @@ usage() {
     echo "  dcp --help                       # Show this help"
     echo
     echo "Examples:"
-    echo "  dcp file.txt uos@10.8.12.86:/tmp/"
-    echo "  dcp uos@10.8.12.86:/etc/hosts ."
+    echo "  dcp file.txt user@10.8.xx.xx:/tmp/"
+    echo "  dcp user@10.8.xx.xx:/etc/hosts ."
     echo "  dcp -r /local/dir/ user@server:/remote/dir/"
-    echo "  dcp --add-alias prod uos@10.8.12.86  # Add alias"
+    echo "  dcp --add-alias prod user@10.8.xx.xx  # Add alias"
     echo "  dcp file.txt @prod:/tmp/              # Use alias"
     echo
     echo "Features:"

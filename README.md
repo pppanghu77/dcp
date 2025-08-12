@@ -11,6 +11,35 @@ DCP (Dynamic Copy Protocol) 是一个智能的 SCP 命令封装工具，提供�
 - **兼容性**: 完全兼容 scp 的所有参数和选项
 - **多 shell 支持**: 支持 bash 和 zsh 自动补全
 
+## 🎨 工作原理
+
+### 缓存机制
+
+1. **自动记录**: 每次使用包含 `user@host:` 格式的命令时，自动提取并保存到缓存
+2. **智能匹配**: 补全时优先匹配已缓存的主机
+3. **用户友好**: 支持部分用户名**别名**，自动补全为完整地址
+
+### 补全算法
+
+```bash
+# 补全逻辑流程
+输入: "u" + TAB
+    ↓
+检查缓存和别名中是否有以 "u" 开头的条目
+    ↓
+找到: "user@10.8.xx.xx" 和别名 "@ubuntu"
+    ↓
+补全选项: "user@10.8.xx.xx:" 和 "@ubuntu:"
+
+输入: "@p" + TAB
+    ↓
+检查别名中以 "p" 开头的条目
+    ↓
+找到: 别名 "prod"
+    ↓
+补全为: "@prod:"
+```
+
 ## 📦 安装
 
 ### 自动安装
@@ -47,10 +76,10 @@ cp dcp-completion.zsh /usr/local/share/zsh/site-functions/_dcp
 
 ```bash
 # 复制文件到远程主机
-dcp file.txt uos@10.8.12.86:/tmp/
+dcp file.txt user@10.8.xx.xx:/tmp/
 
 # 从远程主机复制文件
-dcp uos@10.8.12.86:/etc/hosts .
+dcp user@10.8.xx.xx:/etc/hosts .
 
 # 递归复制目录
 dcp -r /local/dir/ user@server:/remote/dir/
@@ -64,11 +93,11 @@ dcp -P 2222 file.txt user@host:/path/
 ```bash
 # 输入用户名开头，按 TAB 补全
 $ dcp u<TAB>
-uos@10.8.12.86:
+user@10.8.xx.xx:
 
 # 输入完整的用户@主机，按 TAB 自动添加冒号
-$ dcp uos@10.8.12.86<TAB>
-uos@10.8.12.86:
+$ dcp user@10.8.xx.xx<TAB>
+user@10.8.xx.xx:
 
 # 本地文件路径补全
 $ dcp /home/<TAB>
@@ -79,7 +108,7 @@ $ dcp /home/<TAB>
 
 ```bash
 # 添加主机别名
-dcp --add-alias prod uos@10.8.12.86
+dcp --add-alias prod user@10.8.xx.xx
 dcp --add-alias dev root@192.168.1.100
 
 # 查看所有别名
@@ -145,34 +174,6 @@ dcp/
   - openssh-client (scp 命令)
 - **可选**: zsh (用于 zsh 补全)
 
-## 🎨 工作原理
-
-### 缓存机制
-
-1. **自动记录**: 每次使用包含 `user@host:` 格式的命令时，自动提取并保存到缓存
-2. **智能匹配**: 补全时优先匹配已缓存的主机
-3. **用户友好**: 支持部分用户名匹配，自动补全为完整地址
-
-### 补全算法
-
-```bash
-# 补全逻辑流程
-输入: "u" + TAB
-    ↓
-检查缓存和别名中是否有以 "u" 开头的条目
-    ↓
-找到: "uos@10.8.12.86" 和别名 "@ubuntu"
-    ↓
-补全选项: "uos@10.8.12.86:" 和 "@ubuntu:"
-
-输入: "@p" + TAB
-    ↓
-检查别名中以 "p" 开头的条目
-    ↓
-找到: 别名 "prod"
-    ↓
-补全为: "@prod:"
-```
 
 ## 🚀 高级功能
 

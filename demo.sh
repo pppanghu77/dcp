@@ -23,8 +23,8 @@ echo
 
 # 2. 添加主机到缓存
 echo -e "${CYAN}2. 添加主机到缓存:${NC}"
-echo "$ ./dcp --add-host uos@10.8.12.86"
-./dcp --add-host uos@10.8.12.86
+echo "$ ./dcp --add-host user@10.8.xx.xx"
+./dcp --add-host user@10.8.xx.xx
 echo
 
 echo "$ ./dcp --add-host root@192.168.1.100"
@@ -43,8 +43,8 @@ echo
 
 # 4. 添加和使用别名
 echo -e "${CYAN}4. 别名功能:${NC}"
-echo "$ ./dcp --add-alias prod uos@10.8.12.86"
-./dcp --add-alias prod uos@10.8.12.86
+echo "$ ./dcp --add-alias prod user@10.8.xx.xx"
+./dcp --add-alias prod user@10.8.xx.xx
 echo
 
 echo "$ ./dcp --add-alias dev root@192.168.1.100"
@@ -59,7 +59,7 @@ echo
 echo -e "${CYAN}5. 自动补全功能:${NC}"
 echo -e "${YELLOW}当你输入以下内容并按 TAB 键时:${NC}"
 echo
-echo -e "  ${GREEN}dcp u<TAB>${NC}     → 会补全为: ${GREEN}uos@10.8.12.86:${NC} 或 ${GREEN}@prod:${NC}"
+echo -e "  ${GREEN}dcp u<TAB>${NC}     → 会补全为: ${GREEN}user@10.8.xx.xx:${NC} 或 ${GREEN}@prod:${NC}"
 echo -e "  ${GREEN}dcp @p<TAB>${NC}    → 会补全为: ${GREEN}@prod:${NC}"
 echo -e "  ${GREEN}dcp @d<TAB>${NC}    → 会补全为: ${GREEN}@dev:${NC}"
 echo -e "  ${GREEN}dcp r<TAB>${NC}     → 会补全为: ${GREEN}root@192.168.1.100:${NC}"
@@ -74,7 +74,7 @@ echo
 
 echo -e "${YELLOW}使用别名复制文件:${NC}"
 echo "$ ./dcp /tmp/test-dcp.txt @prod:/tmp/"
-echo -e "${GREEN}别名 @prod 会自动解析为 uos@10.8.12.86${NC}"
+echo -e "${GREEN}别名 @prod 会自动解析为 user@10.8.xx.xx${NC}"
 echo
 
 # 7. 演示缓存管理
