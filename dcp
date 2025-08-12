@@ -1,0 +1,171 @@
+#!/bin/bash
+
+# dcp - Enhanced scp wrapper with auto-completion and caching
+# Author: Assistant
+# Description: A shell wrapper for scp command with intelligent caching and tab completion
+
+# Configuration
+DCP_CACHE_DIR="${HOME}/.cache/dcp"
+DCP_CACHE_FILE="${DCP_CACHE_DIR}/hosts"
+DCP_CONFIG_FILE="${DCP_CACHE_DIR}/config"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Initialize cache directory
+init_cache() {
+    if [[ ! -d "$DCP_CACHE_DIR" ]]; then
+        mkdir -p "$DCP_CACHE_DIR"
+    fi
+
+    if [[ ! -f "$DCP_CACHE_FILE" ]]; then
+        touch "$DCP_CACHE_FILE"
+    fi
+
+    if [[ ! -f "$DCP_CONFIG_FILE" ]]; then
+        echo "# DCP Configuration" > "$DCP_CONFIG_FILE"
+        echo "DEFAULT_USER=root" >> "$DCP_CONFIG_FILE"
+        echo "SCP_OPTIONS=" >> "$DCP_CONFIG_FILE"
+    fi
+}
+
+# Load configuration
+load_config() {
+    if [[ -f "$DCP_CONFIG_FILE" ]]; then
+        source "$DCP_CONFIG_FILE"
+    fi
+}
+
+# Print usage information
+usage() {
+    echo -e "${BLUE}dcp - Enhanced scp wrapper with auto-completion and caching${NC}"
+    echo
+    echo "Usage:"
+    echo "  dcp [options] source destination"
+    echo "  dcp --list-hosts                 # List cached hosts"
+    echo "  dcp --add-host user@host         # Add host to cache"
+    echo "  dcp --remove-host user@host      # Remove host from cache"
+    echo "  dcp --clear-cache                # Clear all cached hosts"
+    echo "  dcp --help                       # Show this help"
+    echo
+    echo "Examples:"
+    echo "  dcp file.txt uos@10.8.12.86:/tmp/"
+    echo "  dcp uos@10.8.12.86:/etc/hosts ."
+    echo "  dcp -r /local/dir/ user@server:/remote/dir/"
+    echo
+    echo "Features:"
+    echo "  - Auto-completion with TAB key"
+    echo "  - Automatic caching of used hosts"
+    echo "  - Support for all scp options"
+    echo
+}
+
+# Add host to cache
+add_host_to_cache() {
+    local host="$1"
+    if [[ -n "$host" && "$host" =~ ^[^@]+@[^:]+$ ]]; then
+        if ! grep -q "^$host$" "$DCP_CACHE_FILE" 2>/dev/null; then
+            echo "$host" >> "$DCP_CACHE_FILE"
+            echo -e "${GREEN}Added host to cache: ${NC}$host"
+        fi
+    fi
+}
+
+# Extract host from argument
+extract_host() {
+    local arg="$1"
+    if [[ "$arg" =~ ^([^@]+@[^:]+): ]]; then
+        echo "${BASH_REMATCH[1]}"
+    fi
+}
+
+# List cached hosts
+list_hosts() {
+    echo -e "${BLUE}Cached hosts:${NC}"
+    if [[ -f "$DCP_CACHE_FILE" && -s "$DCP_CACHE_FILE" ]]; then
+        cat "$DCP_CACHE_FILE" | sort | uniq
+    else
+        echo "No hosts cached yet."
+    fi
+}
+
+# Remove host from cache
+remove_host() {
+    local host="$1"
+    if [[ -f "$DCP_CACHE_FILE" ]]; then
+        grep -v "^$host$" "$DCP_CACHE_FILE" > "${DCP_CACHE_FILE}.tmp" 2>/dev/null
+        mv "${DCP_CACHE_FILE}.tmp" "$DCP_CACHE_FILE"
+        echo -e "${GREEN}Removed host from cache: ${NC}$host"
+    fi
+}
+
+# Clear cache
+clear_cache() {
+    if [[ -f "$DCP_CACHE_FILE" ]]; then
+        > "$DCP_CACHE_FILE"
+        echo -e "${GREEN}Cache cleared.${NC}"
+    fi
+}
+
+# Main function
+main() {
+    init_cache
+    load_config
+
+    # Handle special commands
+    case "$1" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --list-hosts)
+            list_hosts
+            exit 0
+            ;;
+        --add-host)
+            if [[ -n "$2" ]]; then
+                add_host_to_cache "$2"
+            else
+                echo -e "${RED}Error: Please specify a host in format user@hostname${NC}"
+                exit 1
+            fi
+            exit 0
+            ;;
+        --remove-host)
+            if [[ -n "$2" ]]; then
+                remove_host "$2"
+            else
+                echo -e "${RED}Error: Please specify a host to remove${NC}"
+                exit 1
+            fi
+            exit 0
+            ;;
+        --clear-cache)
+            clear_cache
+            exit 0
+            ;;
+        "")
+            usage
+            exit 0
+            ;;
+    esac
+
+    # Parse arguments to find hosts and cache them
+    for arg in "$@"; do
+        host=$(extract_host "$arg")
+        if [[ -n "$host" ]]; then
+            add_host_to_cache "$host"
+        fi
+    done
+
+    # Execute scp with all arguments
+    echo -e "${YELLOW}Executing: ${NC}scp $*"
+    exec scp "$@"
+}
+
+# Run main function with all arguments
+main "$@"

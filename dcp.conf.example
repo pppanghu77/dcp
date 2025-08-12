@@ -1,0 +1,48 @@
+# DCP Configuration File Example
+# Copy this file to ~/.cache/dcp/config and modify as needed
+
+# Default user for connections when not specified
+DEFAULT_USER=root
+
+# Default SCP options to always apply
+# Common options:
+#   -C: Enable compression
+#   -q: Quiet mode
+#   -v: Verbose mode
+#   -r: Recursive (for directories)
+#   -p: Preserve file attributes
+SCP_OPTIONS=-C
+
+# Default port for SSH connections
+# Uncomment and set if you commonly use a non-standard port
+# DEFAULT_PORT=22
+
+# Timeout for connections (in seconds)
+# Uncomment to set a default timeout
+# TIMEOUT=30
+
+# Enable/disable automatic host caching
+# Set to 'false' to disable automatic caching
+AUTO_CACHE=true
+
+# Maximum number of hosts to keep in cache
+# Older hosts will be removed when this limit is reached
+# Set to 0 for unlimited
+MAX_CACHE_SIZE=100
+
+# Default remote path when none is specified
+# Uncomment to set a default remote directory
+# DEFAULT_REMOTE_PATH=/tmp/
+
+# Custom aliases for frequently used hosts
+# Format: ALIAS_name=user@hostname
+# These can be used like: dcp file.txt @prod:/path/
+ALIAS_prod=admin@production.server.com
+ALIAS_dev=developer@dev.server.com
+ALIAS_test=testuser@test.server.com
+
+# SSH key file locations
+# Uncomment and set if you use specific key files for certain hosts
+# SSH_KEY_DEFAULT=~/.ssh/id_rsa
+# SSH_KEY_prod=~/.ssh/prod_key
+# SSH_KEY_dev=~/.ssh/dev_key
