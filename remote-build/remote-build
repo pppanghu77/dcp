@@ -1,0 +1,361 @@
+#!/bin/bash
+
+# Remote Build Script
+# 用法: remote-build user@host
+# 功能: SSH远程构建当前项目并将构建产物传输回本地
+
+set -e
+
+# 配置区域 - 可自定义构建命令
+BUILD_COMMAND="dpkg-buildpackage -us -uc -b -j16"  # 默认构建命令，可根据项目类型修改
+BUILD_OUTPUT_DIR="../"            # 构建输出目录，dpkg-buildpackage在上级目录生成文件
+BUILD_FILE_PATTERN="*.deb"        # 构建产物文件模式，可自定义为其他类型如 *.tar.gz, *.rpm 等
+REMOTE_WORK_DIR="/remote-build-workspace"  # 远程工作目录
+
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 日志函数
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# 显示帮助信息
+show_help() {
+    cat << EOF
+Remote Build Script
+
+用法:
+    remote-build user@host
+
+参数:
+    user@host    SSH连接目标，格式为 用户名@IP地址
+
+示例:
+    remote-build root@10.8.11.100
+    remote-build ubuntu@192.168.1.100
+
+配置:
+    可在脚本开头修改以下变量:
+    - BUILD_COMMAND: 构建命令 (默认: dpkg-buildpackage -us -uc -b -j16)
+    - BUILD_OUTPUT_DIR: 构建输出目录 (默认: ../)
+    - BUILD_FILE_PATTERN: 构建产物文件模式 (默认: *.deb)
+    - REMOTE_WORK_DIR: 远程工作目录 (默认: /remote-build-workspace)
+
+功能:
+    1. 获取当前项目的Git仓库信息
+    2. SSH连接到远程主机
+    3. 在远程主机克隆当前项目
+    4. 在远程主机执行构建
+    5. 将构建产物传输回本地release目录
+EOF
+}
+
+# 检查参数
+if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_help
+    exit 0
+fi
+
+REMOTE_HOST="$1"
+
+# 检查SSH连接格式
+if [[ ! "$REMOTE_HOST" =~ ^[^@]+@[^@]+$ ]]; then
+    log_error "SSH连接格式错误，应为: user@host"
+    log_error "示例: remote-build root@10.8.11.100"
+    exit 1
+fi
+
+log_info "开始远程构建流程..."
+log_info "目标主机: $REMOTE_HOST"
+log_info "构建命令: $BUILD_COMMAND"
+log_info "构建输出目录: $BUILD_OUTPUT_DIR"
+
+# 检查当前目录是否为Git仓库
+check_git_repo() {
+    log_info "检查当前目录Git仓库信息..."
+
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        log_error "当前目录不是Git仓库"
+        exit 1
+    fi
+
+    # 获取当前目录的绝对路径作为仓库路径
+    GIT_LOCAL_PATH=$(pwd)
+
+    # 获取项目名称（目录名）
+    PROJECT_NAME=$(basename "$GIT_LOCAL_PATH")
+
+    # 获取当前分支
+    GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+
+        # 获取本机用户名
+    LOCAL_USER=$(whoami)
+
+    # 获取本机IP地址（优先获取内网IP）
+    LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' || hostname -I | awk '{print $1}' || echo "127.0.0.1")
+
+    # 构建SSH连接信息（不包含路径）
+    LOCAL_SSH_HOST="${LOCAL_USER}@${LOCAL_IP}"
+
+    log_success "Git仓库信息获取成功"
+    log_info "本地仓库路径: $GIT_LOCAL_PATH"
+    log_info "项目名称: $PROJECT_NAME"
+    log_info "当前分支: $GIT_BRANCH"
+    log_info "本机用户: $LOCAL_USER"
+    log_info "本机IP: $LOCAL_IP"
+    log_info "SSH连接: $LOCAL_SSH_HOST"
+}
+
+# 测试SSH连接
+test_ssh_connection() {
+    log_info "测试SSH连接..."
+
+    # 首先尝试无密码连接（密钥认证）
+    if ssh -o ConnectTimeout=10 -o BatchMode=yes "$REMOTE_HOST" "echo 'SSH连接测试成功'" > /dev/null 2>&1; then
+        log_success "SSH密钥认证成功"
+        return 0
+    fi
+
+    # 如果密钥认证失败，询问用户是否尝试密码认证
+    log_warning "SSH密钥认证失败"
+    echo -n "是否尝试密码认证？[Y/n]: "
+    read -r response
+
+    if [[ "$response" =~ ^[Nn]$ ]]; then
+        log_error "用户取消密码认证"
+        exit 1
+    fi
+
+    log_info "尝试密码认证，请输入密码..."
+
+    # 尝试交互式连接测试（确保标准输入可用）
+    if ssh -o ConnectTimeout=10 "$REMOTE_HOST" "echo 'SSH密码认证测试成功'" </dev/tty; then
+        log_success "SSH密码认证成功"
+        log_warning "建议配置SSH密钥以避免每次输入密码"
+        return 0
+    else
+        log_error "SSH连接失败，请检查:"
+        log_error "1. 网络连接是否正常"
+        log_error "2. 目标主机是否可访问"
+        log_error "3. 用户名和密码是否正确"
+        log_error "4. SSH服务是否在目标主机运行"
+        exit 1
+    fi
+}
+
+# 测试远程主机是否能SSH回连本机
+test_reverse_ssh_connection() {
+    log_info "测试远程主机是否能SSH回连本机..."
+
+    # 首先尝试密钥认证
+    if ssh "$REMOTE_HOST" "ssh -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no $LOCAL_SSH_HOST 'echo 远程回连测试成功'" > /dev/null 2>&1; then
+        log_success "远程主机SSH回连测试成功（密钥认证）"
+        return 0
+    fi
+
+    # 如果密钥认证失败，提示用户
+    log_warning "远程主机无法通过密钥SSH回连本机"
+    log_info "正在测试是否需要密码认证..."
+
+    # 询问用户是否尝试密码认证
+    echo -n "是否尝试密码认证进行回连测试？[Y/n]: "
+    read -r response </dev/tty
+
+    if [[ "$response" =~ ^[Nn]$ ]]; then
+        log_warning "跳过密码认证回连测试"
+    else
+        log_info "测试远程主机SSH回连（可能需要输入密码）..."
+        if ssh "$REMOTE_HOST" "ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no $LOCAL_SSH_HOST 'echo 远程回连测试成功'" </dev/tty; then
+            log_success "远程主机SSH回连测试成功（密码认证）"
+            log_warning "建议在远程主机配置本机的SSH密钥以避免每次输入密码"
+            return 0
+        fi
+    fi
+
+    # 如果到这里说明回连测试失败或被跳过
+    log_error "远程主机无法SSH回连本机，请检查:"
+    log_error "1. 本机SSH服务是否启动: sudo systemctl start ssh"
+    log_error "2. 远程主机是否有本机的SSH密钥或正确密码"
+    log_error "3. 网络连接是否双向可达"
+    log_error "4. 防火墙设置是否允许SSH连接"
+    log_error "5. 本机SSH端口是否开放（默认22）"
+    log_warning "提示: 可以在远程主机手动测试: ssh $LOCAL_SSH_HOST"
+
+    # 询问用户是否继续
+    echo -n "是否跳过回连测试继续执行？（可能导致Git克隆失败）[y/N]: "
+    read -r continue_response </dev/tty
+
+    if [[ "$continue_response" =~ ^[Yy]$ ]]; then
+        log_warning "跳过SSH回连测试，继续执行..."
+        return 0
+    else
+        exit 1
+    fi
+}
+
+# 远程构建
+remote_build() {
+    log_info "开始远程构建..."
+
+    # 生成项目目录名（基于项目名和时间戳）
+    # 使用全局时间戳变量
+    REMOTE_PROJECT_DIR="$REMOTE_WORK_DIR/${PROJECT_NAME}_${BUILD_TIMESTAMP}"
+
+    log_info "远程项目目录: $REMOTE_PROJECT_DIR"
+    log_info "本机SSH连接: $LOCAL_SSH_HOST"
+    log_info "克隆路径: $GIT_LOCAL_PATH"
+
+    # 执行远程命令（使用-t选项分配伪终端以支持交互式输入）
+    ssh -t "$REMOTE_HOST" << EOF
+        set -e
+
+        echo "=== 创建工作目录 ==="
+        mkdir -p "$REMOTE_WORK_DIR"
+        cd "$REMOTE_WORK_DIR"
+
+        echo "=== 克隆项目 ==="
+        if [ -d "${PROJECT_NAME}_${BUILD_TIMESTAMP}" ]; then
+            rm -rf "${PROJECT_NAME}_${BUILD_TIMESTAMP}"
+        fi
+        # Git克隆（可能需要密码输入）
+        echo "正在克隆项目，如果需要密码请输入..."
+        git clone "$LOCAL_SSH_HOST:$GIT_LOCAL_PATH" "${PROJECT_NAME}_${BUILD_TIMESTAMP}"
+        cd "${PROJECT_NAME}_${BUILD_TIMESTAMP}"
+
+        echo "=== 切换分支 ==="
+        git checkout "$GIT_BRANCH"
+
+        echo "=== 执行构建 ==="
+        $BUILD_COMMAND
+
+        echo "=== 构建完成 ==="
+        # 检查构建产物
+        cd "$BUILD_OUTPUT_DIR"
+        if ls $BUILD_FILE_PATTERN 1> /dev/null 2>&1; then
+            echo "构建产物文件:"
+            ls -la $BUILD_FILE_PATTERN
+        else
+            echo "警告: 没有找到匹配 $BUILD_FILE_PATTERN 的构建产物"
+            echo "当前目录内容:"
+            ls -la
+        fi
+EOF
+
+    if [ $? -eq 0 ]; then
+        log_success "远程构建完成"
+        return 0
+    else
+        log_error "远程构建失败"
+        return 1
+    fi
+}
+
+# 传输构建产物
+transfer_build_artifacts() {
+    log_info "传输构建产物到本地..."
+
+    # 创建本地release目录
+    LOCAL_RELEASE_DIR="./release"
+    mkdir -p "$LOCAL_RELEASE_DIR"
+
+    # 生成本地目标目录名
+    LOCAL_TARGET_DIR="$LOCAL_RELEASE_DIR/${PROJECT_NAME}_${BUILD_TIMESTAMP}"
+    mkdir -p "$LOCAL_TARGET_DIR"
+
+    # 远程构建产物路径（在项目的上级目录）
+    REMOTE_BUILD_PATH="$REMOTE_WORK_DIR/${PROJECT_NAME}_${BUILD_TIMESTAMP}/$BUILD_OUTPUT_DIR"
+
+    log_info "从远程路径传输: $REMOTE_BUILD_PATH$BUILD_FILE_PATTERN"
+    log_info "到本地路径: $LOCAL_TARGET_DIR"
+
+    # 首先检查远程是否有构建产物
+    log_info "检查远程构建产物..."
+    if ! ssh "$REMOTE_HOST" "ls $REMOTE_BUILD_PATH$BUILD_FILE_PATTERN" > /dev/null 2>&1; then
+        log_error "远程没有找到匹配 $BUILD_FILE_PATTERN 的构建产物"
+        log_info "尝试列出远程构建目录内容..."
+        ssh "$REMOTE_HOST" "ls -la $REMOTE_BUILD_PATH" || log_warning "无法列出远程目录内容"
+        return 1
+    fi
+
+    # 使用scp传输文件
+    if scp "$REMOTE_HOST:$REMOTE_BUILD_PATH$BUILD_FILE_PATTERN" "$LOCAL_TARGET_DIR/"; then
+        log_success "构建产物传输完成"
+        log_info "本地路径: $(realpath "$LOCAL_TARGET_DIR")"
+
+        # 显示传输的文件
+        log_info "传输的文件列表:"
+        ls -la "$LOCAL_TARGET_DIR"
+    else
+        log_error "构建产物传输失败"
+        return 1
+    fi
+}
+
+# 清理远程文件
+cleanup_remote() {
+    log_info "清理远程构建文件..."
+
+    REMOTE_PROJECT_DIR="$REMOTE_WORK_DIR/${PROJECT_NAME}_${BUILD_TIMESTAMP}"
+
+    ssh "$REMOTE_HOST" "rm -rf '$REMOTE_PROJECT_DIR'" || log_warning "远程文件清理失败，请手动清理"
+}
+
+# 主流程
+main() {
+    log_info "=== 远程构建开始 ==="
+
+    # 生成全局时间戳
+    BUILD_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+    # 检查Git仓库
+    check_git_repo
+
+    # 测试SSH连接
+    test_ssh_connection
+
+    # 测试远程主机是否能SSH回连本机
+    test_reverse_ssh_connection
+
+    # 远程构建
+    if remote_build; then
+        # 传输构建产物
+        if transfer_build_artifacts; then
+            log_success "=== 远程构建流程完成 ==="
+        else
+            log_error "构建产物传输失败"
+            exit 1
+        fi
+    else
+        log_error "远程构建失败"
+        exit 1
+    fi
+
+    # 清理远程文件（可选）
+    read -p "是否清理远程构建文件？[y/N]: " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        cleanup_remote
+    fi
+
+    log_success "所有操作完成！"
+}
+
+# 执行主流程
+main
